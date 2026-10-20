@@ -33,3 +33,22 @@ select cron.schedule(
 
 -- Conferir: select * from cron.job; select * from cron.job_run_details order by start_time desc limit 20;
 -- Pausar tudo: select cron.unschedule('pitstophub-sync');
+
+-- Copia de seguranca semanal (domingo 06:00 UTC = 03:00 em Brasilia) para o
+-- bucket privado "backups" (funcao backup; guarda as 8 ultimas).
+select cron.unschedule('pitstophub-backup') where exists (select 1 from cron.job where jobname = 'pitstophub-backup');
+select cron.schedule(
+  'pitstophub-backup',
+  '0 6 * * 0',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/backup',
+    headers := jsonb_build_object(
+      'content-type', 'application/json',
+      'x-sync-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'sync_secret')
+    ),
+    body := '{}'::jsonb,
+    timeout_milliseconds := 10000
+  );
+  $$
+);
