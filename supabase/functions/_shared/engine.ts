@@ -85,6 +85,7 @@ export async function runCategory(adapter: AdapterWithRules, store: Store, opts:
   const ctx = { http: opts.http, now, params: { ...config.params } };
   let alertText: string | null = null;
   let alertKey: string | null = null;
+  let phase = `ler a fonte (${adapter.source})`;
 
   try {
     const available = await adapter.listSeasons(ctx);
@@ -190,6 +191,7 @@ export async function runCategory(adapter: AdapterWithRules, store: Store, opts:
 
     // 5) Gravacao.
     if (mode === 'live') {
+      phase = 'gravar no banco';
       if (racesOk) {
         // Corridas de outra temporada ou do sistema antigo (season null) vao
         // para o arquivo. A classificacao antiga fica ate a nova existir.
@@ -237,7 +239,7 @@ export async function runCategory(adapter: AdapterWithRules, store: Store, opts:
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    report.problems.push(`Falha ao ler a fonte (${adapter.source}): ${message}`);
+    report.problems.push(`Falha ao ${phase}: ${message}`);
     report.durationMs = Date.now() - started;
     const failures = (status?.consecutive_failures ?? 0) + 1;
     await store.putStatus(category, {
