@@ -45,12 +45,26 @@ const LEAGUE_IDS = {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Categorias ja passadas para o motor novo (Supabase Edge Functions, modo
+// "live" em category_config) saem desta rotina, para os dois nao gravarem
+// a mesma tabela. Sem a tabela (motor ainda nao instalado), roda tudo.
+async function categoriesOwnedByEngine() {
+  const { data, error } = await supabase.from('category_config').select('category_id').eq('mode', 'live');
+  if (error) return new Set();
+  return new Set((data ?? []).map((row) => row.category_id));
+}
+
 async function main() {
   const rowsByCategory = {};
   const standingsByCategory = {};
   const summary = [];
+  const ownedByEngine = await categoriesOwnedByEngine();
 
   for (const [categoryId, leagueId] of Object.entries(LEAGUE_IDS)) {
+    if (ownedByEngine.has(categoryId)) {
+      summary.push(`${categoryId}: no motor novo (Supabase), pulado aqui`);
+      continue;
+    }
     try {
       const { rows, standings, standingsRound } = await syncCategory(categoryId, leagueId);
       rowsByCategory[categoryId] = rows;
@@ -155,6 +169,13 @@ async function main() {
   }
   console.log(`Total de corridas gravadas: ${totalRows}`);
   console.log(`Categorias com classificacao: ${Object.keys(standingsByCategory).length}/${Object.keys(LEAGUE_IDS).length}`);
+
+  // Antes o job terminava "verde" mesmo com categoria falhando ou vazia.
+  const broken = summary.filter((line) => /FALHOU|: 0 corridas/.test(line));
+  if (broken.length > 0) {
+    console.error(`\n${broken.length} categoria(s) com problema:\n${broken.join('\n')}`);
+    process.exitCode = 1;
+  }
 }
 
 async function syncCategory(categoryId, leagueId) {

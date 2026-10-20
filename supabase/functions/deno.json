@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "test": "deno test --allow-read --allow-env tests/",
+    "check": "deno check sync/index.ts admin/index.ts",
+    "probe": "deno run --allow-net --allow-env --allow-read tools/probe.ts"
+  },
+  "lint": { "rules": { "exclude": ["no-explicit-any"] } },
+  "fmt": { "lineWidth": 140, "singleQuote": true }
+}
