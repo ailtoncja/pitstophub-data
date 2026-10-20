@@ -1,5 +1,5 @@
-import { assert, assertEquals } from 'jsr:@std/assert@1';
-import { f2, findObjects, flightRows, sessionKey } from '../_shared/adapters/fia-formula.ts';
+import { assert, assertEquals, assertThrows } from 'jsr:@std/assert@1';
+import { f2, findObjects, flightRows, sameOriginUrl, sessionKey } from '../_shared/adapters/fia-formula.ts';
 import { fixtureHttp } from '../_shared/http.ts';
 import { compareStandings, computeStandings } from '../_shared/points.ts';
 import { validateRaces, validateStandings } from '../_shared/validate.ts';
@@ -80,4 +80,24 @@ Deno.test('f2: classificacao calculada bate com a oficial', async () => {
   assertEquals(snap.officialStandings.find((s) => s.group === 'teams')?.rows[0], { position: 1, name: 'Campos Racing', points: 333 });
   for (const set of snap.officialStandings) assertEquals(validateStandings(set, []).problems, []);
   assertEquals(validateRaces(snap, { races: [], standings: [] }), { problems: [], warnings: [] });
+});
+
+Deno.test('f2: link da etapa so dentro do proprio site', async () => {
+  assertEquals(sameOriginUrl('/en/racing/2026/baku', B), `${B}/en/racing/2026/baku`);
+  assertEquals(sameOriginUrl('en/racing/2026/baku?x=1', B), `${B}/en/racing/2026/baku?x=1`);
+  for (const bad of ['//evil.example/x', 'https://evil.example/x', 'http://www.fiaformula2.com/x', 'https://www.fiaformula2.com.evil.example/x', 'javascript:alert(1)', 'file:///etc/passwd']) {
+    assertThrows(() => sameOriginUrl(bad, B), Error, 'Link fora', bad);
+  }
+
+  // Etapa com url externa no payload: pagina nao e buscada e sourceUrl fica null.
+  const tampered = read('standings_2026_drivers.rsc').replace('"url":"/en/racing/2026/baku"', '"url":"//evil.example/en/racing/2026/baku"');
+  assert(tampered.includes('evil.example'), 'fixture tem o url da etapa de Baku');
+  const asked: string[] = [];
+  const base = fixtureHttp({ ...Object.fromEntries(SLUGS.map((s) => [`${B}/en/racing/2026/${s}`, read(`race_${s}.rsc`)])), [`${B}/en/standings/2026/drivers`]: tampered, [`${B}/en/standings/2026/teams`]: read('standings_2026_teams.rsc') });
+  const http = { ...base, text: (u: string, i?: RequestInit) => (asked.push(u), base.text(u, i)) };
+  const snap = await f2.fetchSnapshot({ http, now: ctx.now, params: {} }, 2026);
+  assert(!asked.some((u) => u.includes('evil')));
+  const baku = snap.races.find((r) => r.externalId && r.enLocation?.startsWith('Baku'))!;
+  assertEquals(baku.sourceUrl, null);
+  assert(snap.notes!.some((n) => n.includes('Link fora')));
 });
