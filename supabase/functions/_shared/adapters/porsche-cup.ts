@@ -1,4 +1,7 @@
-import * as XLSX from 'npm:xlsx@0.18.5';
+// SheetJS 0.20.3 (copia do CDN oficial em _shared/vendor): corrige a falha de
+// prototype pollution da 0.18.5 do npm. O deploy do Supabase nao importa do CDN.
+// @deno-types="../vendor/xlsx-0.20.3/index.d.ts"
+import * as XLSX from '../vendor/xlsx-0.20.3/xlsx.mjs';
 import type { AdapterContext, RaceRecord, RaceResult, ResultRow, Snapshot, StandingRow, StandingsSet } from '../types.ts';
 import type { AdapterWithRules } from '../engine.ts';
 
