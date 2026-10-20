@@ -7,3 +7,6 @@ verify_jwt = false
 
 [functions.admin]
 verify_jwt = false
+
+[functions.backup]
+verify_jwt = false
