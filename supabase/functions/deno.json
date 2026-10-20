@@ -1,7 +1,7 @@
 {
   "tasks": {
     "test": "deno test --allow-read --allow-env --allow-import=jsr.io,deno.land tests/",
-    "check": "deno check --allow-import=jsr.io,deno.land sync/index.ts admin/index.ts",
+    "check": "deno check --allow-import=jsr.io,deno.land sync/index.ts admin/index.ts backup/index.ts",
     "probe": "deno run --allow-net --allow-env --allow-read tools/probe.ts"
   },
   "lint": { "rules": { "exclude": ["no-explicit-any"] } },

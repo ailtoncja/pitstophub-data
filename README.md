@@ -3,9 +3,8 @@
 Mantém o Supabase do PitStopHub (site e app Android) atualizado com calendário, vencedores e classificação das
 categorias, direto das fontes oficiais.
 
-Desde out/2026 isso roda **dentro do Supabase** (Edge Functions + pg_cron), sem depender do GitHub Actions. O script
-antigo (`scripts/sync-thesportsdb.mjs`) continua aqui só durante a transição: ele pula toda categoria que já estiver
-ativa no motor novo.
+Desde out/2026 isso roda **dentro do Supabase** (Edge Functions + pg_cron). O GitHub Actions e o script antigo
+(TheSportsDB) não são mais usados e foram removidos do repositório.
 
 ## Como funciona
 
@@ -66,12 +65,18 @@ Pré-requisitos: [Supabase CLI](https://supabase.com/docs/guides/cli) logado (`n
 npx supabase link --project-ref <ID-DO-PROJETO>
 npx supabase db push                                   # cria as tabelas novas (não mexe nos dados atuais)
 npx supabase secrets set SYNC_SECRET=<texto-longo-aleatorio> ADMIN_USER_IDS=<seu-id-de-usuario>
+npx supabase secrets set ADMIN_ALLOWED_ORIGIN=https://pitstophub.vercel.app   # origem do site que abre o painel
 npx supabase secrets set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_CHAT_ID=<id>   # alertas (ou ALERT_WEBHOOK_URL)
 npx supabase functions deploy sync
 npx supabase functions deploy admin
+npx supabase functions deploy backup
 ```
 
 Depois rode `supabase/setup_cron.sql` no SQL Editor (troque os dois valores no topo).
+
+`ADMIN_ALLOWED_ORIGIN` é obrigatório para o painel: sem ele a função `admin` não manda cabeçalho CORS e nenhum
+navegador consegue chamá-la. Opcional: `ADMIN_REQUIRE_MFA=true` exige login com verificação em duas etapas (o painel
+recebe `403 mfa_required` quando a sessão não passou pelo segundo fator).
 
 `ADMIN_USER_IDS` = o ID da sua conta no site (Supabase → Authentication → Users → sua linha → "User UID").
 Só essa conta abre o painel; para mais de uma pessoa, separe os IDs por vírgula. Fica como segredo da função,
@@ -84,17 +89,15 @@ fora deste repositório público.
    `TELEGRAM_CHAT_ID`.
 3. Discord: crie um webhook no canal e use `ALERT_WEBHOOK_URL`.
 
-## Migração gradual
+## Modos de cada categoria
 
-1. Tudo começa em **modo teste**. Abra o painel (`/admin` no site) e veja, por categoria, o que o motor gravaria.
-2. Quando o relatório de uma categoria estiver certo, mude para **Ativa** no painel. A partir daí o script antigo pula
-   essa categoria e o motor novo assume (as linhas antigas dela vão para o arquivo).
-3. Com todas ativas e uma semana sem problema, desative o workflow antigo:
-   `gh workflow disable sync-categories.yml --repo ailtoncja/pitstophub-data`.
+Categoria nova começa em **modo teste**: no painel (`/admin` no site) dá para ver o que o motor gravaria. Quando o
+relatório estiver certo, mude para **Ativa**; as linhas antigas dela vão para o arquivo.
 
 ## Painel (`/admin` no site)
 
-Abre só para a sua conta (login normal do site + ID em `ADMIN_USER_IDS`, conferidos no servidor). Por categoria: estado, último sucesso, até qual etapa vai, problemas e avisos, o que mudaria
+Abre só para a sua conta (login normal do site + ID em `ADMIN_USER_IDS`, conferidos no servidor; com
+`ADMIN_REQUIRE_MFA=true`, também o segundo fator). Por categoria: estado, último sucesso, até qual etapa vai, problemas e avisos, o que mudaria
 (em modo teste), botão "Rodar agora", modo (desligada / teste / ativa), **corrigir vencedor** e **desfazer** mudanças.
 
 Uma correção vale até a fonte oficial trazer o mesmo valor; aí ela se resolve sozinha.
@@ -125,3 +128,7 @@ registrar em `_shared/registry.ts`, testar com `deno task probe <id>` e inserir 
 ## Banco
 
 `supabase/migrations/` cria tudo num projeto novo. Os scripts antigos em `supabase/*.sql` ficam como referência.
+
+Permissões: visitantes (`anon`) e usuários logados (`authenticated`) só **leem** `synced_races`, `synced_standings`,
+`standings_detail`, `race_results` e a view `sync_freshness`. Usuário logado grava apenas as próprias linhas de
+`user_settings` e `push_subscriptions` (RLS). Todo o resto é só das Edge Functions (`service_role`).

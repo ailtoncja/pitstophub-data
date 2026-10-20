@@ -20,7 +20,8 @@ const LOADERS: Record<string, () => Promise<AdapterWithRules>> = {
 export const CATEGORY_IDS = Object.keys(LOADERS);
 
 export async function loadAdapter(category: string): Promise<AdapterWithRules | null> {
-  const loader = LOADERS[category];
+  // hasOwn: "constructor", "__proto__" etc. nao sao categorias.
+  const loader = Object.hasOwn(LOADERS, category) ? LOADERS[category] : undefined;
   return loader ? await loader() : null;
 }
 

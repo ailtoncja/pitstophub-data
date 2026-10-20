@@ -188,8 +188,18 @@ async function standings<T>(ctx: AdapterContext, base: string, season: number, k
   return found[0];
 }
 
+/**
+ * URL de um caminho que veio da fonte (m.url), montada sobre o site da serie.
+ * Erro se apontar para outro site (URL absoluta, "//host", outro esquema).
+ */
+export function sameOriginUrl(path: string, base: string): string {
+  const url = new URL(path, base);
+  if (url.origin !== new URL(base).origin) throw new Error(`Link fora de ${new URL(base).host}: ${path}`);
+  return url.href;
+}
+
 async function racePage(ctx: AdapterContext, base: string, path: string): Promise<RacePage> {
-  const url = `${base}${path}`;
+  const url = sameOriginUrl(path, base);
   const rows = flightRows(await ctx.http.text(url, RSC));
   const found = findObjects<RacePage>(rows, (o) => Array.isArray(o.meetingSessions) && 'meetingKey' in o);
   if (!found.length) throw new Error(`Sessoes nao encontradas no payload de ${url}.`);
@@ -309,7 +319,7 @@ function makeAdapter(series: Series): AdapterWithRules {
           winner,
           official,
           externalId: String(m.meetingKey),
-          sourceUrl: `${series.base}${m.url}`,
+          sourceUrl: safeSourceUrl(m.url, series.base),
         });
 
         // Resultados das corridas ja disputadas (futuras nao tem pontos).
@@ -368,6 +378,15 @@ function makeAdapter(series: Series): AdapterWithRules {
       return { season, races, results, officialStandings, notes };
     },
   };
+}
+
+/** Mesmo teste de sameOriginUrl; link fora do site vira null (nao vai para o banco). */
+function safeSourceUrl(path: string, base: string): string | null {
+  try {
+    return sameOriginUrl(path, base);
+  } catch {
+    return null;
+  }
 }
 
 /**
