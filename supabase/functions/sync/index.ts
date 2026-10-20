@@ -9,10 +9,11 @@
 //
 // Protegida por SYNC_SECRET (header x-sync-secret).
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { runCategory } from '../_shared/engine.ts';
 import { liveHttp } from '../_shared/http.ts';
 import { CATEGORY_IDS, intervalFor, loadAdapter } from '../_shared/registry.ts';
+import { secretEquals } from '../_shared/secret.ts';
 import { SupabaseStore } from '../_shared/store.ts';
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
@@ -23,7 +24,7 @@ function json(body: unknown, status = 200) {
 
 Deno.serve(async (req) => {
   const secret = Deno.env.get('SYNC_SECRET');
-  if (!secret || req.headers.get('x-sync-secret') !== secret) return json({ error: 'unauthorized' }, 401);
+  if (!secret || !(await secretEquals(req.headers.get('x-sync-secret'), secret))) return json({ error: 'unauthorized' }, 401);
 
   const url = new URL(req.url);
   const category = url.searchParams.get('category');

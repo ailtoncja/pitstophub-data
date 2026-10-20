@@ -77,10 +77,17 @@ export interface Snapshot {
   notes?: string[];
 }
 
+export interface FetchOptions {
+  /** Hosts extras para onde um redirecionamento pode ir (alem do host do pedido e das fontes conhecidas). */
+  allowedHosts?: string[];
+  /** Tamanho maximo da resposta em bytes (padrao 10 MB). */
+  maxBytes?: number;
+}
+
 export interface HttpClient {
-  text(url: string, init?: RequestInit): Promise<string>;
-  json<T = unknown>(url: string, init?: RequestInit): Promise<T>;
-  bytes(url: string, init?: RequestInit): Promise<Uint8Array>;
+  text(url: string, init?: RequestInit, opts?: FetchOptions): Promise<string>;
+  json<T = unknown>(url: string, init?: RequestInit, opts?: FetchOptions): Promise<T>;
+  bytes(url: string, init?: RequestInit, opts?: FetchOptions): Promise<Uint8Array>;
 }
 
 export interface AdapterContext {

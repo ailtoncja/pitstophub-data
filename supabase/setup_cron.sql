@@ -8,6 +8,8 @@
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
+-- Projeto novo: depois deste script, rode de novo o bloco b) (pg_net) de
+-- migrations/20261020040000_security_review.sql para tirar o acesso de anon.
 
 select vault.create_secret('https://SEU-PROJETO.supabase.co', 'project_url');
 select vault.create_secret('MESMO-VALOR-DO-SYNC_SECRET', 'sync_secret');

@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.118.0';
 import type { ManualOverride } from './overrides.ts';
 import type { PointsRules, RaceRecord, RaceResult, StandingsSet, SyncMode } from './types.ts';
 

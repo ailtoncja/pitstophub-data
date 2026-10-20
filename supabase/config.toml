@@ -1,6 +1,6 @@
 # Configuracao minima do Supabase CLI para as Edge Functions deste repositorio.
-# As duas funcoes tem autenticacao propria (SYNC_SECRET / ADMIN_TOKEN), por
-# isso nao exigem o JWT do Supabase.
+# As funcoes tem autenticacao propria (SYNC_SECRET / sessao do admin conferida
+# na propria funcao), por isso nao exigem o JWT do Supabase.
 
 [functions.sync]
 verify_jwt = false

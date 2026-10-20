@@ -4,6 +4,10 @@
 // (IDs do Supabase Auth, separados por virgula; segredo da funcao, fora do
 // repositorio publico). Nunca expoe a chave service_role.
 //
+// CORS: so a origem em ADMIN_ALLOWED_ORIGIN (ex.: https://pitstophub.vercel.app).
+// Sem ela configurada, nenhum navegador consegue chamar (falha fechada).
+// ADMIN_REQUIRE_MFA=true exige login com segundo fator (claim aal = aal2).
+//
 // GET  /admin/status                      estado de todas as categorias
 // GET  /admin/races?category=x            calendario atual da categoria
 // GET  /admin/changes?category=x          ultimas mudancas gravadas
@@ -14,14 +18,16 @@
 // POST /admin/override/disable {id}
 // POST /admin/revert    {changeId}        desfaz uma mudanca de corrida
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
+import { tokenAal, validateOverride } from '../_shared/admin-validate.ts';
 import { runCategory } from '../_shared/engine.ts';
 import { liveHttp } from '../_shared/http.ts';
 import { CATEGORY_IDS, loadAdapter } from '../_shared/registry.ts';
 import { SupabaseStore } from '../_shared/store.ts';
 
-const CORS = {
-  'access-control-allow-origin': Deno.env.get('ADMIN_ALLOWED_ORIGIN') ?? '*',
+const ALLOWED_ORIGIN = Deno.env.get('ADMIN_ALLOWED_ORIGIN')?.trim();
+const CORS: Record<string, string> = {
+  ...(ALLOWED_ORIGIN ? { 'access-control-allow-origin': ALLOWED_ORIGIN } : {}),
   'access-control-allow-headers': 'content-type, authorization, apikey, x-client-info',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
 };
@@ -30,7 +36,6 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'content-type': 'application/json' } });
 }
 
-const KINDS = new Set(['winner', 'race_status', 'race_date', 'standing_points']);
 const MODES = new Set(['off', 'dry_run', 'live']);
 const RACE_COLUMNS: Record<string, string> = {
   round: 'round', name: 'name', date: 'date', startsAt: 'starts_at', status: 'status',
@@ -52,11 +57,20 @@ Deno.serve(async (req) => {
   const { data: auth, error: authError } = await db.auth.getUser(accessToken);
   if (authError || !auth.user) return json({ error: 'sessao invalida, entre de novo' }, 401);
   if (!admins.includes(auth.user.id)) return json({ error: 'acesso restrito ao dono do site' }, 403);
+  // O token ja foi validado por getUser acima; aqui so le o claim aal.
+  if (Deno.env.get('ADMIN_REQUIRE_MFA') === 'true' && tokenAal(accessToken) !== 'aal2') {
+    return json({ error: 'verificacao em duas etapas necessaria', code: 'mfa_required' }, 403);
+  }
   const url = new URL(req.url);
   const route = url.pathname.replace(/^.*\/admin/, '') || '/';
   const category = url.searchParams.get('category') ?? '';
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
-  const fail = (e: { message: string } | null) => (e ? json({ error: e.message }, 500) : null);
+  // Detalhe do erro so no log; o navegador recebe mensagem generica.
+  const fail = (e: { message: string } | null, message = 'erro interno, veja o log da funcao') => {
+    if (!e) return null;
+    console.error(`admin ${req.method} ${route}:`, e);
+    return json({ error: message }, 500);
+  };
 
   try {
     if (req.method === 'GET' && route === '/status') {
@@ -131,14 +145,22 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === 'POST' && route === '/override') {
-      const { category: cat, season, race_id, kind, value, note } = body;
-      if (!CATEGORY_IDS.includes(cat) || !KINDS.has(kind) || !Number.isInteger(season) || value == null) {
-        return json({ error: 'dados invalidos' }, 400);
+      const checked = validateOverride(body, CATEGORY_IDS);
+      if (!checked.ok) return json({ error: checked.error }, 400);
+      const { category: cat, season, race_id, kind, value, note } = checked.value;
+      if (race_id) {
+        const { data: race, error: e1 } = await db
+          .from('synced_races')
+          .select('race_id')
+          .eq('category_id', cat)
+          .eq('race_id', race_id)
+          .maybeSingle();
+        if (e1) return fail(e1)!;
+        if (!race) return json({ error: 'corrida nao encontrada nesta categoria' }, 400);
       }
-      if (kind !== 'standing_points' && !race_id) return json({ error: 'race_id obrigatorio' }, 400);
       const { data, error } = await db
         .from('manual_overrides')
-        .insert({ category_id: cat, season, race_id: race_id ?? null, kind, value, note: note ?? null })
+        .insert({ category_id: cat, season, race_id, kind, value, note })
         .select()
         .single();
       if (error) return fail(error)!;
@@ -147,7 +169,12 @@ Deno.serve(async (req) => {
         const patch = kind === 'winner'
           ? { winner: String(value), status: 'completed' }
           : kind === 'race_status' ? { status: String(value) } : { date: String(value) };
-        await db.from('synced_races').update({ ...patch, updated_at: new Date().toISOString() }).eq('category_id', cat).eq('race_id', race_id);
+        const { error: e2 } = await db
+          .from('synced_races')
+          .update({ ...patch, updated_at: new Date().toISOString() })
+          .eq('category_id', cat)
+          .eq('race_id', race_id);
+        if (e2) return fail(e2, 'correcao gravada, mas nao foi aplicada no site agora; sera aplicada na proxima execucao')!;
       }
       return json(data);
     }
@@ -184,6 +211,7 @@ Deno.serve(async (req) => {
 
     return json({ error: 'rota desconhecida' }, 404);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    console.error(`admin ${req.method} ${route}:`, error);
+    return json({ error: 'erro interno, veja o log da funcao' }, 500);
   }
 });

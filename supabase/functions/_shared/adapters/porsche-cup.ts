@@ -32,6 +32,12 @@ const SITE = 'https://porschecupbrasil.com/';
 const FALLBACK_FOLDER = '1dRhvX1ZMZjzjy0ltAfXi6N5s-pBJla5Q';
 const folderUrl = (id: string) => `https://drive.google.com/embeddedfolderview?id=${id}`;
 const fileUrl = (id: string) => `https://drive.usercontent.google.com/download?id=${id}&export=download`;
+// Limites da busca no Drive (a pasta e de terceiros): entradas lidas no total,
+// pastas abertas ao mesmo tempo e tamanho da planilha antes do XLSX.read.
+export const MAX_DRIVE_ENTRIES = 200;
+const DRIVE_CONCURRENCY = 4;
+const MAX_DEPTH = 2;
+export const MAX_WORKBOOK_BYTES = 5 * 1024 * 1024;
 
 const SHEETS = {
   drivers: 'CARRERA CUP',
@@ -112,23 +118,46 @@ async function findWorkbook(ctx: AdapterContext, html: string, season: number, n
   }
   const files: { id: string; title: string; date: string | null }[] = [];
   const seen = new Set<string>();
-  const walk = async (id: string, depth: number) => {
-    if (seen.has(id)) return;
-    seen.add(id);
-    const entries = parseFolder(await ctx.http.text(folderUrl(id)));
-    const sub = entries.filter((e) => e.folder);
-    files.push(
-      ...entries.filter((e) => !e.folder && /\.xls[xm]$/i.test(e.title)).map((e) => ({
-        id: e.id,
-        title: e.title,
-        date: fileDate(e.title),
-      })),
-    );
-    if (depth < 2) await Promise.all(sub.map((s) => walk(s.id, depth + 1)));
+  // Em largura, nivel por nivel (raiz = 0), no maximo MAX_DRIVE_ENTRIES
+  // entradas somando pastas e arquivos; o que passar disso e ignorado.
+  let budget = MAX_DRIVE_ENTRIES;
+  let truncated = false;
+  const take = <T>(items: T[]): T[] => {
+    if (items.length > budget) truncated = true;
+    const kept = items.slice(0, Math.max(0, budget));
+    budget -= kept.length;
+    return kept;
   };
-  await Promise.all(roots.map((r) => walk(r, 0)));
+  let level = take(roots);
+  for (let depth = 0; level.length && depth <= MAX_DEPTH; depth++) {
+    const todo = level.filter((id) => !seen.has(id));
+    todo.forEach((id) => seen.add(id));
+    const listings = await mapLimit(todo, DRIVE_CONCURRENCY, async (id) => parseFolder(await ctx.http.text(folderUrl(id))));
+    const next: string[] = [];
+    for (const entries of listings) {
+      for (const e of take(entries)) {
+        if (e.folder) next.push(e.id);
+        else if (/\.xls[xm]$/i.test(e.title)) files.push({ id: e.id, title: e.title, date: fileDate(e.title) });
+      }
+    }
+    level = next;
+  }
+  if (truncated) notes.push(`Pasta do Drive com mais de ${MAX_DRIVE_ENTRIES} entradas; o resto foi ignorado.`);
   const dated = files.filter((f) => f.date && Number(f.date.slice(0, 4)) === season).sort((a, b) => b.date!.localeCompare(a.date!));
   return dated[0] ?? null;
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 type Cell = string | number | null;
@@ -262,7 +291,9 @@ export const adapter: AdapterWithRules = {
         notes.push(`Nenhuma planilha de pontuacao de ${season} na pasta do Drive.`);
       } else {
         notes.push(`Planilha ${file.title} (${file.date}).`);
-        const wb = XLSX.read(await ctx.http.bytes(fileUrl(file.id)), {
+        // Limite de tamanho antes do XLSX.read (a planilha real tem ~0,5 MB).
+        const data = await ctx.http.bytes(fileUrl(file.id), undefined, { maxBytes: MAX_WORKBOOK_BYTES, allowedHosts: ['drive.usercontent.google.com'] });
+        const wb = XLSX.read(data, {
           type: 'array',
           sheets: Object.values(SHEETS),
           cellFormula: false,

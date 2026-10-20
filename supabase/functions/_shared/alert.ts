@@ -28,7 +28,8 @@ export async function sendAlert(text: string): Promise<boolean> {
       const res = await fetch(webhook, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content: text.slice(0, 1900) }),
+        // allowed_mentions vazio: texto vindo das fontes nunca vira @everyone/@here.
+        body: JSON.stringify({ content: text.slice(0, 1900), allowed_mentions: { parse: [] } }),
         signal: AbortSignal.timeout(10_000),
       });
       sent = res.ok || sent;
