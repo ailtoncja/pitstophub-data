@@ -25,15 +25,28 @@ import { liveHttp } from '../_shared/http.ts';
 import { CATEGORY_IDS, loadAdapter } from '../_shared/registry.ts';
 import { SupabaseStore } from '../_shared/store.ts';
 
-const ALLOWED_ORIGIN = Deno.env.get('ADMIN_ALLOWED_ORIGIN')?.trim();
-const CORS: Record<string, string> = {
-  ...(ALLOWED_ORIGIN ? { 'access-control-allow-origin': ALLOWED_ORIGIN } : {}),
-  'access-control-allow-headers': 'content-type, authorization, apikey, x-client-info',
-  'access-control-allow-methods': 'GET, POST, OPTIONS',
-};
+const ALLOWED_ORIGINS = (Deno.env.get('ADMIN_ALLOWED_ORIGIN') ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'content-type': 'application/json' } });
+function corsHeaders(req: Request): Record<string, string> {
+  const reqOrigin = req.headers.get('origin') ?? '';
+  const allowedOrigin =
+    ALLOWED_ORIGINS.length === 1 && !reqOrigin
+      ? ALLOWED_ORIGINS[0]
+      : ALLOWED_ORIGINS.includes(reqOrigin)
+        ? reqOrigin
+        : undefined;
+  return {
+    ...(allowedOrigin ? { 'access-control-allow-origin': allowedOrigin } : {}),
+    'access-control-allow-headers': 'content-type, authorization, apikey, x-client-info',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    vary: 'Origin',
+  };
 }
 
 const MODES = new Set(['off', 'dry_run', 'live']);
@@ -43,7 +56,11 @@ const RACE_COLUMNS: Record<string, string> = {
 };
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  const headers = corsHeaders(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { ...headers, 'content-type': 'application/json' } });
+
+  if (req.method === 'OPTIONS') return new Response(null, { headers });
 
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
     auth: { persistSession: false },
