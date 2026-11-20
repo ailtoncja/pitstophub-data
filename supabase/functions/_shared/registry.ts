@@ -26,7 +26,6 @@ export async function loadAdapter(category: string): Promise<AdapterWithRules | 
 }
 
 /** Intervalo minimo entre execucoes, em minutos. */
-export function intervalFor(category: string, raceWeekend: boolean): number {
-  if (!raceWeekend) return 24 * 60;
-  return category === 'nascar' ? 15 : 30;
+export function intervalFor(_category: string, raceWeekend: boolean): number {
+  return raceWeekend ? 15 : 24 * 60;
 }
