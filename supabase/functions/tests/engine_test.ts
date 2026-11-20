@@ -82,6 +82,35 @@ Deno.test('classificacao oficial divergente mantem a anterior e alerta', async (
   assertEquals(store.standings.get('test:drivers')!.set.rows[0].points, 16);
 });
 
+Deno.test('temporada nova com regra herdada aceita classificacao oficial mesmo se a pontuacao mudou', async () => {
+  const store = new MemoryStore();
+  store.config.set('test', { mode: 'live', seasonOverride: null, params: {} });
+  const r1: Snapshot = {
+    season: 2027,
+    races: [race(1, '2027-03-01', 'completed', 'Ana'), race(2, '2027-04-01', 'upcoming')],
+    results: [{ raceId: 'r1', session: 'race', official: true, rows: [{ position: 1, driver: 'Ana' }, { position: 2, driver: 'Bia' }] }],
+    officialStandings: [{ group: 'drivers', rows: [{ position: 1, name: 'Ana', points: 30 }, { position: 2, name: 'Bia', points: 20 }] }],
+  };
+  const rep1 = await runCategory(fakeAdapter([2027], { 2027: r1 }), store, { http, now: new Date('2027-03-02'), alert: quiet });
+  assert(rep1.ok, rep1.problems.join());
+  assertEquals(store.standings.get('test:drivers')!.set.rows[0].points, 30);
+
+  // Na 2a etapa ja existe previousStandings da temporada 2027, mas como a regra ainda e herdada (assumed=true),
+  // o motor continua publicando a classificacao oficial da fonte com warning em vez de travar.
+  const r2: Snapshot = {
+    season: 2027,
+    races: [race(1, '2027-03-01', 'completed', 'Ana'), race(2, '2027-04-01', 'completed', 'Ana')],
+    results: [
+      ...r1.results,
+      { raceId: 'r2', session: 'race', official: true, rows: [{ position: 1, driver: 'Ana' }, { position: 2, driver: 'Bia' }] },
+    ],
+    officialStandings: [{ group: 'drivers', rows: [{ position: 1, name: 'Ana', points: 60 }, { position: 2, name: 'Bia', points: 40 }] }],
+  };
+  const rep2 = await runCategory(fakeAdapter([2027], { 2027: r2 }), store, { http, now: new Date('2027-04-02'), alert: quiet });
+  assert(rep2.ok, rep2.problems.join());
+  assertEquals(store.standings.get('test:drivers')!.set.rows[0].points, 60);
+});
+
 Deno.test('virada de temporada so acontece com a anterior encerrada', () => {
   const races = [race(1, '2026-10-01', 'completed', 'Ana')];
   const early = decideSeason({ available: [2026, 2027], current: 2026, currentRaces: [race(1, '2026-12-01', 'upcoming')], override: null, now: new Date('2026-11-01') });

@@ -117,6 +117,13 @@ export interface Adapter {
 
 export type SyncMode = 'off' | 'dry_run' | 'live';
 
+export interface RuleSectionRecord {
+  title: string;
+  enTitle?: string | null;
+  body: string;
+  enBody?: string | null;
+}
+
 export interface PointsRules {
   /** Pontos por posicao, por sessao. Ex.: { race: [25, 18, ...], sprint: [...] }. */
   sessions: Record<string, number[]>;
@@ -136,6 +143,11 @@ export interface PointsRules {
    * Ex.: { HYPERCAR: 'drivers' } faz a classe principal virar a lista do app.
    */
   classGroupNames?: Record<string, string>;
+  /** Secoes textuais da pagina "Como funciona" confirmadas para esta temporada (opcional). */
+  sections?: RuleSectionRecord[];
+  /** Descricao longa da categoria atualizada para esta temporada (opcional). */
+  longDescription?: string | null;
+  enLongDescription?: string | null;
 }
 
 export interface Change {

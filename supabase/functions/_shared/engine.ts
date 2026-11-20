@@ -139,8 +139,8 @@ export async function runCategory(adapter: AdapterWithRules, store: Store, opts:
         const cmp = compareStandings(calc.rows, off.rows);
         if (cmp.matches) {
           toPublish.push(off);
-        } else if (previousStandings.length === 0 && group === 'drivers') {
-          // Sem nada salvo ainda: publica a oficial, mas avisa.
+        } else if ((previousStandings.length === 0 && group === 'drivers') || (!dbRules && fallback.assumed)) {
+          // Sem nada salvo ainda ou temporada nova com regra herdada da anterior: publica a oficial, mas avisa.
           toPublish.push(off);
           report.warnings.push(`Classificacao calculada difere da oficial (${group}): ${cmp.differences.slice(0, 3).join('; ')}.`);
         } else {
